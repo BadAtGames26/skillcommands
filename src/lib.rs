@@ -72,7 +72,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     // vtable 34 function is the FuncImpl which does the whole ""周囲の隣接男女数(number, number, number)" thing
     skill_command.get_class_mut().get_vtable_mut()[34].method_ptr = sid_range_check as *mut u8; 
 
-    // adding our edited "周囲の隣接男女数" command that does our skill check. Its a CalculatorCommand so no need to transmute it.
+    // adding our edited "周囲の隣接男女数" command that does our skill check.
     calculator.add_command(skill_command);
 
     //do it again for the reverse 
