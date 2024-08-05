@@ -1,227 +1,364 @@
 #![feature(lazy_cell, ptr_sub_ptr)]
+use engage::battle::BattleInfoSide;
+use engage::calculator::*;
 use unity::{prelude::*, il2cpp::object::Array};
-use engage::gamedata::{*, item::UnitItem, unit::*, job::*, skill::SkillData};
+use engage::gamedata::{Gamedata, unit::*, skill::SkillData};
 use engage::{mess::*, force::*};
 
-#[unity::class("App", "CapabilityInt")]
-pub struct CapabilityInt {
-    pub data: &'static mut Array<i32>,
-}
-#[unity::class("App", "BattleDetail")]
-pub struct BattleDetail {
-    pub capability: &'static mut CapabilityInt,
-}
-#[unity::class("App", "TerrainData")]
-pub struct TerrainData {}
-
-#[unity::class("App", "BattleInfoSide")]
-pub struct BattleInfoSide {
-    //junk : [u8; 0x48],
-    info: u64,
-    pub side_type : i32,
-    __ : i32,
-    pub unit: Option<&'static Unit>,
-    pub unit_item: &'static UnitItem,
-    pub specified_item: &'static UnitItem,
-    pub x: i32,
-    pub z: i32,
-    pub terrain: &'static TerrainData,
-    pub overlap: &'static TerrainData,
-    pub status: &'static WeaponMask,
-    pub detail: &'static BattleDetail,
-    hierarchy: u64,
-    support: u64,
-    pub parent: &'static BattleInfoSide,
-    pub reverse: &'static BattleInfoSide,
-}
-
-#[unity::class("App", "GameCalculatorCommand")]
-pub struct GameCalculatorCommand {}
-
-#[unity::class("App", "CalculatorCommand")]
-pub struct CalculatorCommand {}
-
-#[unity::class("App", "CalculatorManager")]
-pub struct CalculatorManager {}
-
-#[skyline::from_offset(0x0298d900)]
-pub fn calculator_manager_add_command(this: &CalculatorManager, command: &CalculatorCommand, method_info: OptionalMethod) -> &'static CalculatorCommand;
-
-#[skyline::from_offset(0x0298daa0)]
-pub fn find_command(this: &CalculatorManager, name: &Il2CppString, method_info: OptionalMethod) -> &'static mut CalculatorCommand;
-
-#[unity::from_offset("App", "GameCalculatorCommand", "Reverse")]
-pub fn game_calculator_command_reverse(this: &CalculatorCommand, method_info: OptionalMethod) -> &'static mut CalculatorCommand;
-
 #[unity::hook("App", "UnitCalculator", "AddCommand")]
-fn add_command_hook(calculator: &CalculatorManager, method_info: OptionalMethod){
+fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMethod){
     // GameCalculator is a CalculatorManager
     call_original!(calculator, method_info);
-    unsafe {
-        // changing luuk command for move with new GetImpl functions defined in this plugin
-        let luckc: &mut CalculatorCommand  = find_command(calculator, "幸運".into(), None);
-        println!("Attempting to make move command from luuk command {}", luckc.klass.get_name());
-        let luck = il2cpp::instantiate_class::<CalculatorCommand>(luckc.get_class().clone()).unwrap();
-        luck.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _);
-        luck.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move as _);
-        let vtable = luck.get_class_mut().get_vtable_mut();
-        let ptr = get_move_battle_info as *mut u8;
-        vtable[31].method_ptr = std::mem::transmute(ptr);
-        calculator_manager_add_command(calculator, luck, None);
 
-        //Create it again for the reverse 
-        let luck2 = il2cpp::instantiate_class::<CalculatorCommand>(luckc.get_class().clone()).unwrap();
-        luck2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _);
-        luck2.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move as _);
-        let vtable21 = luck2.get_class_mut().get_vtable_mut();
-        let ptr21 = get_move_battle_info as *mut u8;
-        vtable21[31].method_ptr = std::mem::transmute(ptr);
-        calculator_manager_add_command(calculator, game_calculator_command_reverse(luck2,None), None);
+// Example 1: Grabing the movement stat of a unit does not exist, so lets create it by editing the command for luck
+    // changing luuk command for move with new GetImpl functions defined in this plugin
+    // grab luuk command to replace get_Name/GetImpl with our defined move functions
+    let luckc: &mut CalculatorCommand  = calculator.find_command("幸運");   
+     // Creating an instance of LuukCommand so we can edit what it does
+    let luck = il2cpp::instantiate_class::<GameCalculatorCommand>(luckc.get_class().clone()).unwrap();  
 
-        // Replacing job rank
-        let job_rank: &mut CalculatorCommand  = find_command(calculator, "兵種ランク".into(), None);
-        job_rank.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_job_rank as _);
+    // replacing get_Name function. "Mov" would be used in actvalue/condition as that's what get_move_name returns
+    luck.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _); // get_move_name() returns "Mov"
+    // replacing what the luuk command grabs, get_move returns the move stat of the unit as defined below. This is for the unit version, which is vtable function 30
+    luck.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move_stat_unit as _); 
+    // replacing what the luuk command grabs, get_move returns the move stat of the unit as defined below. This for the BattleInfoSide version.
+    luck.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_stat_battle_info as *mut u8; 
 
-        // triangle attack 
-        //挟撃
-        let incher: &mut CalculatorCommand  = find_command(calculator, "挟撃中".into(), None);
-        let pincher = il2cpp::instantiate_class::<CalculatorCommand>(incher.get_class().clone()).unwrap();
-        pincher.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_triangle_name as _);
-        let vtable2 = pincher.get_class_mut().get_vtable_mut();
-        let ptr2 = triangle_attack as *mut u8;
-        vtable2[31].method_ptr = std::mem::transmute(ptr2); 
-        calculator_manager_add_command(calculator, pincher, None);
+    // adding our move command (which is an edited luuk command) to the calculator manager
+    // currently need to transmute the command since it's a GameCalculatorCommand but the function expects a CalculatorCommand
+    // For now we do this unsafe transmute until some changes are made in the Engage crate. Note that this is not a good thing to do by default.
+    unsafe { 
+        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(luck) ); 
+    }
 
-        // Sid Range Check
-        let skill: &mut CalculatorCommand  = find_command(calculator, "周囲の隣接男女数".into(), None);
-        let skill_command = il2cpp::instantiate_class::<CalculatorCommand>(skill.get_class().clone()).unwrap();
-        skill_command.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_sid_check_name as _);
-        let vtable3 = skill_command.get_class_mut().get_vtable_mut();
-        let ptr3 = sid_range_check as *mut u8; /* 34, 35, 36, 37 */
-        vtable3[34].method_ptr = std::mem::transmute(ptr3);
-        calculator_manager_add_command(calculator, skill_command, None);
+    //Create it again for the reverse. Need to edit another instance of luuk command for the reverse separately.
+    let luck2 = il2cpp::instantiate_class::<GameCalculatorCommand>(luckc.get_class().clone()).unwrap();
+    luck2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _);
+    luck2.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move_stat_unit as _);
+    luck2.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_stat_battle_info as *mut u8;
+    // this creates the reverse version so "相手のMov" can be used. Calling reverse automatically attaches 相手の to the name to the new created command
+    let reverse_mov = luck2.reverse();  // This returns a new GameCalculatorCommand 
 
-        //do it again for the reverse 
-        let skill_command2 = il2cpp::instantiate_class::<CalculatorCommand>(skill.get_class().clone()).unwrap();
-        skill_command2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_sid_check_name as _);
-        let vtable31 = skill_command2.get_class_mut().get_vtable_mut();
-        let ptr31 = sid_range_check as *mut u8; /* 34, 35, 36, 37 */
-        vtable31[34].method_ptr = std::mem::transmute(ptr31);
-        calculator_manager_add_command(calculator, game_calculator_command_reverse(skill_command2,None), None);
+    //adding the reverse version to the calculator manager, again transmuting because its currently not a CalculatorCommand
+    unsafe { 
+        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(reverse_mov) ); 
+    }
+
+// Example 2: Rewriting what an already existing command does. 
+//  JobRankCommand (兵種ランク) treats special classes as base classes, so let's change it so special classes are treated differently
+    // Replacing what job rank command (兵種ランク) so that special classes will return 2 instead 0.
+    let job_rank: &mut CalculatorCommand  = calculator.find_command("兵種ランク");
+    // replacing the GetImpl with our custom one
+    job_rank.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_job_rank as _);
+    // no need to add it as it's already in the calculator manager
+
+// Example 3: Triangle Attack condition. This example highlights how you can create a command that does something completely new
+// This requires writing a function to replace either GetImpl(Unit) or GetImpl(BattleInfoSide), see the triangle_attack function below
+
+    // triangle attack - using the pincher command as the base.
+    let incher: &mut CalculatorCommand  = calculator.find_command("挟撃中");   // grabbing 挟撃中 command
+    // making an instance of 挟撃中 command to edit what it does
+    let pincher = il2cpp::instantiate_class::<CalculatorCommand>(incher.get_class().clone()).unwrap();  
+
+    // replacing get_Name so it will return "Triangle" instead of "挟撃中". Triangle will be used in condition/actvalue
+    pincher.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_triangle_name as _);
+    // replacing GetImpl(BattleInfoSide) so it does our custom check made for triangle attack.
+    // this command doesn't use unit version but you can defined it if you want
+    pincher.get_class_mut().get_vtable_mut()[31].method_ptr = triangle_attack as *mut u8;
+    // adding our edited pincher command, which functions as our triangle command now to the calculator manager
+
+    // since this is a CalculatorCommand, we don't need to transmute it 
+    calculator.add_command(pincher);
+
+// Example 4: SID Skill Range Skill: most involved custom skill command that will return the number of units (from a particular force) within a range that has a skil;
+    // Sid Range Check - custom command that takes in the skill index, range, and force, by editing "周囲の隣接男女数"
+    let skill: &mut CalculatorCommand  = calculator.find_command("周囲の隣接男女数");   // grabing 周囲の隣接男女数 command
+    // creating an instance of 周囲の隣接男女数 command
+    let skill_command = il2cpp::instantiate_class::<CalculatorCommand>(skill.get_class().clone()).unwrap();
+    // replacing the name of "周囲の隣接男女数" with "SidRange"
+    skill_command.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_sid_check_name as _);
+    // vtable 34 function is the FuncImpl which does the whole ""周囲の隣接男女数(number, number, number)" thing
+    skill_command.get_class_mut().get_vtable_mut()[34].method_ptr = sid_range_check as *mut u8; 
+
+    // adding our edited "周囲の隣接男女数" command that does our skill check. Its a CalculatorCommand so no need to transmute it.
+    calculator.add_command(skill_command);
+
+    //do it again for the reverse 
+    let skill_command2 = il2cpp::instantiate_class::<GameCalculatorCommand>(skill.get_class().clone()).unwrap();
+    skill_command2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_sid_check_name as _);
+    // vtable 34 function is the FuncImpl which does the whole "command(number, number, number)" thing
+    skill_command2.get_class_mut().get_vtable_mut()[34].method_ptr = sid_range_check as *mut u8; 
+    let reverse_skill_check = skill_command2.reverse();
+
+    // GameCalculatorCommand needs to be transmuted into CalculatorCommand. sad. 
+    unsafe { 
+        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(reverse_skill_check) ); 
     }
 }
 
-pub fn get_move_name(this: &GameCalculatorCommand, unit: &Unit, method_info: OptionalMethod) -> &'static Il2CppString { return "Mov".into(); }
-
-pub fn get_move(this: &GameCalculatorCommand, unit: &Unit, method_info: OptionalMethod) -> f32 {
-    let move_stat = unit.get_capability(10, true);
-    println!("move command called with return value {}", move_stat);
-    return move_stat as f32;
+// Mov is what you use in actvalue/condition for this command when replacing it in the vtable 
+pub fn get_move_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString {
+    "Mov".into()
 }
 
-pub fn get_move_battle_info(this: &GameCalculatorCommand, side: &BattleInfoSide, method_info: OptionalMethod) -> f32 {
-    let move_stat =  side.detail.capability.data[10];
-    return move_stat as f32;
+// Replacing GetImpl functions with these
+// GetImpl Unit Function, this will probably get called for non-battle timings
+pub fn get_move_stat_unit(_this: &GameCalculatorCommand, unit: &Unit, _method_info: OptionalMethod) -> f32 {
+    // Move stat is the 10th index
+    unit.get_capability(10, true) as f32
 }
-pub fn get_job_rank(this: &GameCalculatorCommand, unit: &Unit, method_info: OptionalMethod) -> f32 {
-    if unit.get_job().is_low(){ 
-        if unit.get_job().get_max_level() > 20 { return 2.0; }
-        else { return 0.0; }
+
+// GetImpl(BattleInfoSide) This will probably get called during battle timings (2-18)
+pub fn get_move_stat_battle_info(_this: &GameCalculatorCommand, side: &BattleInfoSide, _method_info: OptionalMethod) -> f32 {
+    // Move stat is the 10th index
+    side.detail.capability.data[10] as f32
+}
+
+// Changing what JobRankCommand does to handle special classes differently than base classes by checking if class max level is greater than 20
+pub fn get_job_rank(_this: &GameCalculatorCommand, unit: &Unit, _method_info: OptionalMethod) -> f32 {
+    if unit.get_job().is_low() { 
+        if unit.get_job().get_max_level() > 20 {
+            2.0 //unpromoted and it's a special class: return 2
+        } else {    // unpromoted and not a special class: return 0
+            0.0
+        }
+    } else {    // promoted class returns 1
+        1.0
     }
-    return  1.0; 
 }
 
-pub fn get_triangle_name(this: &GameCalculatorCommand, unit: &Unit, method_info: OptionalMethod) -> &'static Il2CppString { return "Triangle".into(); }
+// Triangle is what is used in condition/actvalue for our triangle attack command
+pub fn get_triangle_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString {
+    "Triangle".into()
+}
 
 #[unity::from_offset("App", "UnitCalculator", "HasForceUnit")]
 pub fn unit_calculator_has_force_unit(x: i32, z: i32, force: i32, method_info: OptionalMethod) -> bool;
 
-#[unity::from_offset("App", "Unit", "get_X")]
-pub fn unit_get_x(this: &Unit, method_info: OptionalMethod) -> i32;
+// function to check if player force units at a position has battle style (Class Type) for triangle attack command
+pub fn check_unit_pos_battle_style(x: i32, z: i32, _force: i32, style: &str) -> bool {
+    let player_force = Force::get(ForceType::Player).unwrap();
 
-#[unity::from_offset("App", "Unit", "get_Z")]
-pub fn unit_get_z(this: &Unit, method_info: OptionalMethod) -> i32;
-
-#[skyline::from_offset(0x01f25ec0)]
-fn get_bmap_size(this: &PersonData, method_info: OptionalMethod) -> u8;
-
-pub fn check_unit_pos_battle_style(x: i32, z: i32, force: i32, style: &str) -> bool {
-    let force_iter = Force::iter(Force::get(ForceType::Player).unwrap());
-    for unit in force_iter {
-        unsafe {
-            if unit_get_x(unit, None) == x && unit_get_z(unit, None) == z {
-                if unit.get_job().get_job_style().is_none() { return false; }
-                let battle_style = unit.get_job().get_job_style().unwrap().get_string().unwrap();
-                return (battle_style == style);
-            }
+    for unit in player_force.iter() {
+        if unit.get_x() == x && unit.get_z() == z {
+            if unit.get_job().get_job_style().is_none() { return false; }
+            let battle_style = unit.get_job().get_job_style().unwrap().get_string().unwrap();
+            return battle_style == style;
         }
     }
+
     return false;
 }
 
+// function to check if a unit of a given force at position x, z that has skill for SidRange
 pub fn check_unit_pos_skill(x: i32, z: i32, force: i32, skill: &SkillData) -> bool {
-    let force_iter; 
-    match force {
-        0 => { force_iter = Force::iter(Force::get(ForceType::Player).unwrap()); }
-        1 => { force_iter = Force::iter(Force::get(ForceType::Enemy).unwrap()); }
-        2 => { force_iter = Force::iter(Force::get(ForceType::Ally).unwrap()); }
-        _ => { force_iter = Force::iter(Force::get(ForceType::Player).unwrap()); }
-    }
-    for unit in force_iter {
-        unsafe {
-            if unit_get_x(unit, None) == x && unit_get_z(unit, None) == z {
-                return unit_has_skill(unit, skill);
-            }
+    let force = match force {
+        0 => { Force::get(ForceType::Player) }
+        1 => { Force::get(ForceType::Enemy) }
+        2 => { Force::get(ForceType::Ally) }
+        _ => { Force::get(ForceType::Player) }
+    };
+
+    for unit in force.unwrap().iter() {
+        if unit.get_x() == x && unit.get_z() == z {
+            return check_has_skill(unit, skill);    // return true if unit has skill
         }
     }
+
     return false;
 }
+// how we implement the check for triangle attack. The meat of the our custom triangle attack command
+pub fn triangle_attack(_this: &GameCalculatorCommand, side: &BattleInfoSide, _method_info: OptionalMethod) -> f32 {
+// Since this is a custom command, you could just panic here and let the user know they messed up and how instead of letting it silently fail
+    let unit = side.unit.unwrap();
+    let target = side.reverse.unit.unwrap();
 
-pub fn triangle_attack(this: &GameCalculatorCommand, side: &BattleInfoSide, method_info: OptionalMethod) -> f32 {
-    unsafe { 
-        if side.unit.is_none() { return 0.0; }
-        let unit = side.unit.unwrap();
-        if side.reverse.unit.is_none() { return 0.0; }
-        let unit2 = side.reverse.unit.unwrap();
-        let force = unit.force.unwrap().force_type; 
-        let target_x = unit_get_x(unit2, None);
-        let target_z = unit_get_z(unit2, None);
-        let mut adjacent_count = 0;
-        let bmap_size = get_bmap_size(unit2.person, None) as i32; 
+    let target_x = target.get_x();
+    let target_z = target.get_z();
+
+    let dx = side.reverse.x - side.x;
+    let dz = side.reverse.z - side.z;
+
+    let mut adjacent_count = 0;
+
+    // ONE RANGE Triangle Attack check only. Can easily adapt it to long range if desired
+    if dx*dx + dz*dz == 1 {
         let battle_style = unit.get_job().get_job_style().unwrap().get_string().unwrap();
-        let dx = side.reverse.x - side.x;
-        let dz = side.reverse.z - side.z;
+        // since targets can be greater than 1x1, need to iterate the entire width of the target
+        let bmap_size = target.person.get_bmap_size() as i32;
         let mut side: [bool; 4] = [false; 4];
-        // ONE RANGE
-        if dx*dx + dz*dz == 1 {
-            for dx_ij in 0..bmap_size {
+
+        // Seaching for all sides of the target to check for allies with the same battle style and adding to the adjacent_count
+        // while also counting one side once if the multiple allies are the same side of a 2x2 or bigger target
+        for dx_ij in 0..bmap_size {
                 //Bottom
-                if check_unit_pos_battle_style(target_x + dx_ij, target_z - 1, 0, &battle_style) && !side[0] {
-                    side[0] = true; adjacent_count += 1;
-                }
+            if check_unit_pos_battle_style(target_x + dx_ij, target_z - 1, 0, &battle_style) && !side[0] {
+                side[0] = true;
+                adjacent_count += 1;
+            }
                 //Top
-                if check_unit_pos_battle_style(target_x + dx_ij, target_z + bmap_size, 0, &battle_style) && !side[1] {
-                    side[1] = true; adjacent_count += 1;
-                }
+            if check_unit_pos_battle_style(target_x + dx_ij, target_z + bmap_size, 0, &battle_style) && !side[1] {
+                side[1] = true;
+                adjacent_count += 1;
+            }
                 //Left
-                if check_unit_pos_battle_style(target_x - 1, target_z + dx_ij, 0, &battle_style) && !side[2] {
-                    side[2] = true; adjacent_count += 1;
-                }
+            if check_unit_pos_battle_style(target_x - 1, target_z + dx_ij, 0, &battle_style) && !side[2] {
+                side[2] = true;
+                adjacent_count += 1;
+            }
                 // Right
-                if check_unit_pos_battle_style(target_x + bmap_size, target_z + dx_ij, 0, &battle_style) && !side[3] {
-                    side[3] = true; adjacent_count += 1;
+            if check_unit_pos_battle_style(target_x + bmap_size, target_z + dx_ij, 0, &battle_style) && !side[3] {
+                side[3] = true;
+                adjacent_count += 1;
+            }
+        }
+    }
+    // triangle attack condition is true if adjacent count is greater/equal to 3, else false
+    if adjacent_count >= 3 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+
+#[unity::class("App", "List")]
+pub struct ListFloats {
+    pub items: &'static Array<f32>,
+    pub size: i32,
+    pub version: i32,
+}
+// used to check if unit has skill 
+pub fn check_has_skill(this: &Unit, skill: &SkillData) -> bool {
+    if this.has_skill(skill) || this.has_skill_equip(skill) || this.has_skill_private(skill) {
+        true
+    } else {
+        false
+    }
+}
+// name of Skill range check that will be used in condition/actvalues
+pub fn get_sid_check_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString {
+    "SidRange".into()
+}
+// for debugging purpose to print the skill name 
+pub fn get_skill_name(skill: &SkillData) -> String {
+    if let Some(name) = skill.name {
+        format!("#{} {} ({})", skill.parent.index, mess_get(name), skill.sid.get_string().unwrap())
+    } else {
+        format!(" --- #{} ({}) ", skill.parent.index, skill.sid.get_string().unwrap())
+    }
+}
+
+pub fn mess_get<'a>(value: impl Into<&'a Il2CppString>) -> String {
+    Mess::get(value).get_string().unwrap()
+}
+
+// Implementation of the SID Range Check
+pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFloats, _method_info: OptionalMethod) -> f32 {
+    // List arguments
+    // 1st argument - Skill Index, can use スキル("SID_XXX")
+    // 2nd argument - range of skill check
+    // 3rd argument - which force of units to check 
+    //              -1: all force but unit's current force, 
+    //               0: player force only
+    //               1: enemy force only
+    //               2: ally force only
+    //               3: player + enemy + ally force
+    // returns number of units that has skill index at a given range and of a given force
+    // SidRange( スキル("SID_平和の花効果"), 1, 1) will check for enemy (force 1) units at 1 range with skill SID_平和の花効果 
+
+    println!("SID Range Check with {} args", args.size);
+    // if only 1 argument is given, return false
+    if args.size < 2 {
+        return 0.0;
+    }
+
+    let skill_list = SkillData::get_list().unwrap();
+    
+    let skill_index = args.items[1] as i32;
+    // if not valid skill index return false
+    if skill_index < 0 || skill_index >= skill_list.len() as i32 { 
+        return 0.0;
+    }
+
+    let range = args.items[0] as i32;
+    let skill = &skill_list[skill_index as usize]; 
+    
+    // if range is 0, check if unit itself has the skill 
+    if range == 0 {
+        if check_has_skill(unit, skill) {
+            return 1.0;
+        }
+        else {
+            return 0.0;
+        }
+    }
+    // getting current position of unit (the center of the range)
+    let x_pos =  unit.get_x();
+    let z_pos = unit.get_z();
+
+    // keeping track of the count of units in each force that has the skill
+    let mut force_unit_count: [i32; 3] = [0; 3];
+
+    // checking all units within the given range
+    for x in -range..range {
+        let x_check = x + x_pos;    // x position to check for unit
+        for z in -range..range {
+            let r2 = range * range;
+            let dr2 = x*x + z*z;
+            let z_check = z + z_pos;   // z position to check for unit
+
+            if dr2 > r2 { continue; }   // if out of range, skip
+
+            for f in 0..3 {
+                if check_unit_pos_skill(x_check, z_check, f as i32, skill) {
+                    // add to the force's unit counter 
+                    force_unit_count[ f as usize] += 1;
                 }
             }
         }
-        if adjacent_count >= 3 { return 1.0; }
-        else {return 0.0; }
+    }
+    // getting which force to check.
+    // if no force argument is given, then use unit's current force
+    let force = if args.size >= 3 {
+        args.items[2] as i32
+    } else {
+        unit.force.unwrap().force_type
+    };
+
+    match force {
+        -1 => { // all forces but the unit's current force
+            let mut return_value = 0;
+            let unit_force_type = unit.force.unwrap().force_type;
+
+            for f in 0..3 {
+                if f == unit_force_type {   // ignore the unit's force
+                    continue;
+                }
+                return_value += force_unit_count[f as usize];
+            }
+            
+            return_value as f32
+        }
+        // 0, 1, and 2, return unit count of that force (player or enemy or ally)
+        idx @ (0 | 1 | 2) => force_unit_count[idx as usize] as f32,
+        3 => { // 3 - return unit count of all forces (player + enemy + ally)
+            let mut return_value = 0;
+
+            for f in 0..3 {
+                return_value += force_unit_count[f as usize];
+            }
+            
+            return_value as f32
+        }
+        _ => 0.0
     }
 }
+
 #[skyline::main(name = "skillcmd")]
 pub fn main() {
     std::panic::set_hook(Box::new(|info| {
         let location = info.location().unwrap();
-
         let msg = match info.payload().downcast_ref::<&'static str>() {
             Some(s) => *s,
             None => {
@@ -231,7 +368,6 @@ pub fn main() {
                 }
             },
         };
-
 
         let err_msg = format!(
             "SkillCommand plugin has panicked at '{}' with the following message:\n{}\0",
@@ -247,95 +383,4 @@ pub fn main() {
     }));
 
     skyline::install_hooks!(add_command_hook);
-}
-
-#[unity::class("App", "List")]
-pub struct ListFloats {
-    pub items: &'static Array<f32>,
-    pub size: i32,
-    pub version: i32,
-}
-#[skyline::from_offset(0x01a35520)]
-pub fn unit_has_skill_mask(this: &Unit, skill: &SkillData, method_info: OptionalMethod) -> bool;
-
-#[skyline::from_offset(0x01a35ec0)]
-pub fn unit_has_skill_equip(this: &Unit, skill: &SkillData, method_info: OptionalMethod) -> bool;
-
-#[skyline::from_offset(0x01a37970)]
-pub fn unit_has_skill_private(this: &Unit, skill: &SkillData, method_info: OptionalMethod) -> bool;
-
-pub fn unit_has_skill(this: &Unit, skill: &SkillData) -> bool {
-    unsafe {
-        if unit_has_skill_mask(this, skill, None) { return true; }
-        if unit_has_skill_equip(this, skill, None) { return true; }
-        if unit_has_skill_private(this, skill, None) { return true; }
-    }
-    return false; 
-}
-pub fn get_sid_check_name(this: &GameCalculatorCommand, unit: &Unit, method_info: OptionalMethod) -> &'static Il2CppString { return "SidRange".into(); }
-
-pub fn get_skill_name(skill: &SkillData) -> String {
-    if skill.name.is_some() { return format!("#{} {} ({})", skill.parent.index, mess_get(skill.name.unwrap()), skill.sid.get_string().unwrap()); }
-    else {  return format!(" --- #{} ({}) ", skill.parent.index, skill.sid.get_string().unwrap()); }
-}
-pub fn mess_get(value: &Il2CppString) -> String { return Mess::get(value).get_string().unwrap(); }
-pub fn sid_range_check(this: &GameCalculatorCommand, unit: &Unit, args: ListFloats, method_info: OptionalMethod) -> f32 {
-    println!("SID Range Check with {} args", args.size);
-    unsafe {
-        if args.size < 2 { return 0.0; }
-        let skill_list = SkillData::get_list().unwrap();
-        let skill_index = args.items[1] as i32;
-        if skill_index < 0 || skill_index >= skill_list.len() as i32 { 
-            return 0.0;
-        }
-        let range = args.items[0] as i32;
-        let x_pos =  unit_get_x(unit, None);
-        let z_pos = unit_get_z(unit, None);
-        let skill = &skill_list[skill_index as usize]; 
-        //println!("Skill: {}", get_skill_name(skill));
-        let r2 = range*range;
-        //println!("Range: {}", range);
-        let mut count: [i32; 3] = [0; 3];
-        let force: i32;
-        if args.size >= 3 { force =  args.items[2] as i32;}
-        else { force = unit.force.unwrap().force_type; }
-        //println!("Force: {}", force);
-        if range == 0 {
-            //println!("Range == 0, returning: {}", unit_has_skill(unit, skill));
-            if unit_has_skill(unit, skill) { return 1.0; }
-            else { return 0.0;}
-        }
-        for x in -range..range {
-            let x_check = x + x_pos;
-            for z in -range..range {
-                let dr2 = x*x + z*z;
-                let z_check = z + z_pos;
-                if dr2 <= r2 {
-                    for f in 0..3 {
-                        if check_unit_pos_skill(x_check, z_check, f as i32, skill) {
-                            count[ f as usize] += 1;
-                        }
-                    }
-                }
-            }
-        }
-        println!("Force {}: {} {} {}", force, count[0], count[1], count[2]);
-        if force == 0 { return count[0] as f32; }
-        else if force == 1 { return count[1] as f32; }
-        else if force == 2 { return count[2] as f32; }
-        else if force == -1 {
-            let mut return_value = 0;
-            for f in 0..3 {
-                if f as i32 == unit.force.unwrap().force_type { continue; }
-                return_value += count[f as usize];
-            }
-            return return_value as f32;
-        }
-        else if force == 3 {
-            let mut return_value = 0;
-            for f in 0..3 { return_value += count[f as usize]; }
-            return return_value as f32;
-        }
-        return 0.0;
-    }
 }
