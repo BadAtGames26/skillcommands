@@ -17,14 +17,14 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     luck.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _);
     luck.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move as _);
     luck.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_battle_info as *mut u8;
-    calculator.add_command(&luck.parent);
+    calculator.add_command(luck);
 
     //Create it again for the reverse 
     let luck2 = il2cpp::instantiate_class::<GameCalculatorCommand>(luckc.get_class().clone()).unwrap();
     luck2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _);
     luck2.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move as _);
     luck2.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_battle_info as *mut u8;
-    calculator.add_command(&luck2.reverse().parent);
+    calculator.add_command(luck2.reverse());
 
     // Replacing job rank
     let job_rank: &mut CalculatorCommand  = calculator.find_command("兵種ランク");
@@ -49,7 +49,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     let skill_command2 = il2cpp::instantiate_class::<GameCalculatorCommand>(skill.get_class().clone()).unwrap();
     skill_command2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_sid_check_name as _);
     skill_command2.get_class_mut().get_vtable_mut()[34].method_ptr = sid_range_check as *mut u8; /* 34, 35, 36, 37 */
-    calculator.add_command(&skill_command2.reverse().parent);
+    calculator.add_command(skill_command2);
 }
 
 pub fn get_move_name(_this: &GameCalculatorCommand, _unit: &Unit, _method_info: OptionalMethod) -> &'static Il2CppString {
