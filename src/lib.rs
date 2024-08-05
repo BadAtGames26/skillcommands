@@ -17,7 +17,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
      // Creating an instance of LuukCommand so we can edit what it does
     let luck = il2cpp::instantiate_class::<GameCalculatorCommand>(luckc.get_class().clone()).unwrap();  
 
-    // replacing get_Name function. "Mov" would be used in actvalue/condition as that's what get_move_name returns
+    // replacing get_Name function "Mov" would be used in actvalue/condition as that's what get_move_name returns
     luck.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_move_name as _); // get_move_name() returns "Mov"
     // replacing what the luuk command grabs, get_move returns the move stat of the unit as defined below. This is for the unit version, which is vtable function 30
     luck.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move_stat_unit as _); 
@@ -25,11 +25,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     luck.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_stat_battle_info as *mut u8; 
 
     // adding our move command (which is an edited luuk command) to the calculator manager
-    // currently need to transmute the command since it's a GameCalculatorCommand but the function expects a CalculatorCommand
-    // For now we do this unsafe transmute until some changes are made in the Engage crate. Note that this is not a good thing to do by default.
-    unsafe { 
-        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(luck) ); 
-    }
+    calculator.add_command( luck ); 
 
     //Create it again for the reverse. Need to edit another instance of luuk command for the reverse separately.
     let luck2 = il2cpp::instantiate_class::<GameCalculatorCommand>(luckc.get_class().clone()).unwrap();
@@ -37,12 +33,9 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     luck2.get_class_mut().get_virtual_method_mut("GetImpl").map(|method| method.method_ptr = get_move_stat_unit as _);
     luck2.get_class_mut().get_vtable_mut()[31].method_ptr = get_move_stat_battle_info as *mut u8;
     // this creates the reverse version so "相手のMov" can be used. Calling reverse automatically attaches 相手の to the name to the new created command
-    let reverse_mov = luck2.reverse();  // This returns a new GameCalculatorCommand 
-
-    //adding the reverse version to the calculator manager, again transmuting because its currently not a CalculatorCommand
-    unsafe { 
-        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(reverse_mov) ); 
-    }
+    let reverse_mov = luck2.reverse();  // This gives as a new GameCalculatorCommand 
+    // Adding it to the calculator manager
+    calculator.add_command( reverse_mov ); 
 
 // Example 2: Rewriting what an already existing command does. 
 //  JobRankCommand (兵種ランク) treats special classes as base classes, so let's change it so special classes are treated differently
@@ -53,7 +46,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     // no need to add it as it's already in the calculator manager
 
 // Example 3: Triangle Attack condition. This example highlights how you can create a command that does something completely new
-// This requires writing a function to replace either GetImpl(Unit) or GetImpl(BattleInfoSide), see the triangle_attack function below
+// This requires writing a function to replace either GetImpl(Unit) or GetImpl(BattleInfoSide) see the triangle_attack function below
 
     // triangle attack - using the pincher command as the base.
     let incher: &mut CalculatorCommand  = calculator.find_command("挟撃中");   // grabbing 挟撃中 command
@@ -67,7 +60,6 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     pincher.get_class_mut().get_vtable_mut()[31].method_ptr = triangle_attack as *mut u8;
     // adding our edited pincher command, which functions as our triangle command now to the calculator manager
 
-    // since this is a CalculatorCommand, we don't need to transmute it 
     calculator.add_command(pincher);
 
 // Example 4: SID Skill Range Skill: most involved custom skill command that will return the number of units (from a particular force) within a range that has a skil;
@@ -90,10 +82,8 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     skill_command2.get_class_mut().get_vtable_mut()[34].method_ptr = sid_range_check as *mut u8; 
     let reverse_skill_check = skill_command2.reverse();
 
-    // GameCalculatorCommand needs to be transmuted into CalculatorCommand. sad. 
-    unsafe { 
-        calculator.add_command( std::mem::transmute::<_, &CalculatorCommand>(reverse_skill_check) ); 
-    }
+    // adding our new "相手のSIDRange" command
+    calculator.add_command( reverse_skill_check); 
 }
 
 // Mov is what you use in actvalue/condition for this command when replacing it in the vtable 
@@ -253,11 +243,10 @@ pub fn mess_get<'a>(value: impl Into<&'a Il2CppString>) -> String {
     Mess::get(value).get_string().unwrap()
 }
 
-// Implementation of the SID Range Check
 pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFloats, _method_info: OptionalMethod) -> f32 {
     // List arguments
-    // 1st argument - Skill Index, can use スキル("SID_XXX")
-    // 2nd argument - range of skill check
+    // 1st argument - range of skill check (if 0, check for unit for skill instead)
+    // 2st argument - Skill Index, can use スキル("SID_XXX")
     // 3rd argument - which force of units to check 
     //              -1: all force but unit's current force, 
     //               0: player force only
@@ -265,7 +254,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     //               2: ally force only
     //               3: player + enemy + ally force
     // returns number of units that has skill index at a given range and of a given force
-    // SidRange( スキル("SID_平和の花効果"), 1, 1) will check for enemy (force 1) units at 1 range with skill SID_平和の花効果 
+    // SidRange( 1, スキル("SID_平和の花効果"), 1) will check for enemy (force 1) units at 1 range with skill SID_平和の花効果 
 
     println!("SID Range Check with {} args", args.size);
     // if only 1 argument is given, return false
@@ -274,7 +263,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     }
 
     let skill_list = SkillData::get_list().unwrap();
-    
+
     let skill_index = args.items[1] as i32;
     // if not valid skill index return false
     if skill_index < 0 || skill_index >= skill_list.len() as i32 { 
@@ -293,14 +282,14 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
             return 0.0;
         }
     }
-    // getting current position of unit (the center of the range)
+
     let x_pos =  unit.get_x();
     let z_pos = unit.get_z();
 
     // keeping track of the count of units in each force that has the skill
     let mut force_unit_count: [i32; 3] = [0; 3];
 
-    // checking all units within the given range
+    // 
     for x in -range..range {
         let x_check = x + x_pos;    // x position to check for unit
         for z in -range..range {
@@ -308,7 +297,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
             let dr2 = x*x + z*z;
             let z_check = z + z_pos;   // z position to check for unit
 
-            if dr2 > r2 { continue; }   // if out of range, skip
+            if dr2 > r2 { continue; }   // if out of range
 
             for f in 0..3 {
                 if check_unit_pos_skill(x_check, z_check, f as i32, skill) {
@@ -325,6 +314,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     } else {
         unit.force.unwrap().force_type
     };
+
 
     match force {
         -1 => { // all forces but the unit's current force
