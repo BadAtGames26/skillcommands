@@ -1,4 +1,4 @@
-#![feature(lazy_cell, ptr_sub_ptr)]
+#![feature(ptr_sub_ptr)]
 use engage::battle::BattleInfoSide;
 use engage::calculator::*;
 use unity::{prelude::*, il2cpp::object::Array};
@@ -132,7 +132,7 @@ pub fn check_unit_pos_battle_style(x: i32, z: i32, _force: i32, style: &str) -> 
     for unit in player_force.iter() {
         if unit.get_x() == x && unit.get_z() == z {
             if unit.get_job().get_job_style().is_none() { return false; }
-            let battle_style = unit.get_job().get_job_style().unwrap().get_string().unwrap();
+            let battle_style = unit.get_job().get_job_style().unwrap().to_string();
             return battle_style == style;
         }
     }
@@ -173,7 +173,7 @@ pub fn triangle_attack(_this: &GameCalculatorCommand, side: &BattleInfoSide, _me
 
     // ONE RANGE Triangle Attack check only. Can easily adapt it to long range if desired
     if dx*dx + dz*dz == 1 {
-        let battle_style = unit.get_job().get_job_style().unwrap().get_string().unwrap();
+        let battle_style = unit.get_job().get_job_style().unwrap().to_string();
         // since targets can be greater than 1x1, need to iterate the entire width of the target
         let bmap_size = target.person.get_bmap_size() as i32;
         let mut side: [bool; 4] = [false; 4];
@@ -233,14 +233,14 @@ pub fn get_sid_check_name(_this: &GameCalculatorCommand, _method_info: OptionalM
 // for debugging purpose to print the skill name 
 pub fn get_skill_name(skill: &SkillData) -> String {
     if let Some(name) = skill.name {
-        format!("#{} {} ({})", skill.parent.index, mess_get(name), skill.sid.get_string().unwrap())
+        format!("#{} {} ({})", skill.parent.index, mess_get(name), skill.sid.to_string())
     } else {
-        format!(" --- #{} ({}) ", skill.parent.index, skill.sid.get_string().unwrap())
+        format!(" --- #{} ({}) ", skill.parent.index, skill.sid.to_string())
     }
 }
 
 pub fn mess_get<'a>(value: impl Into<&'a Il2CppString>) -> String {
-    Mess::get(value).get_string().unwrap()
+    Mess::get(value).to_string()
 }
 
 pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFloats, _method_info: OptionalMethod) -> f32 {
