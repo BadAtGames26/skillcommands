@@ -283,7 +283,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
         }
     }
 
-    let x_pos =  unit.get_x();
+    let x_pos = unit.get_x();
     let z_pos = unit.get_z();
 
     // keeping track of the count of units in each force that has the skill
