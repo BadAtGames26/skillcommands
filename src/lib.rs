@@ -290,9 +290,9 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     let mut force_unit_count: [i32; 3] = [0; 3];
 
     // 
-    for x in -range..range {
+    for x in -range..range+1 {
         let x_check = x + x_pos;    // x position to check for unit
-        for z in -range..range {
+        for z in -range..range+1 {
             let r2 = range * range;
             let dr2 = x*x + z*z;
             let z_check = z + z_pos;   // z position to check for unit
