@@ -1,6 +1,7 @@
 #![feature(ptr_sub_ptr)]
 use engage::battle::BattleInfoSide;
-use engage::calculator::*;
+use engage::{calculator::*, force};
+use engage::unitpool::UnitPool;
 use unity::{prelude::*, il2cpp::object::Array};
 use engage::gamedata::{Gamedata, unit::*, skill::SkillData};
 use engage::{mess::*, force::*};
@@ -84,6 +85,38 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
 
     // adding our new "相手のSIDRange" command
     calculator.add_command( reverse_skill_check); 
+
+
+    // UnitStatus Check
+    let status_command = il2cpp::instantiate_class::<CalculatorCommand>(skill.get_class().clone()).unwrap();
+    status_command.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_unit_status_name as _);
+    status_command.get_class_mut().get_vtable_mut()[34].method_ptr = unit_status_check as *mut u8; 
+
+    let status_command2 = il2cpp::instantiate_class::<GameCalculatorCommand>(skill.get_class().clone()).unwrap();
+    status_command2.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_unit_status_name as _);
+    status_command2.get_class_mut().get_vtable_mut()[34].method_ptr = unit_status_check as *mut u8; 
+    let reserve_status = status_command2.reverse();
+
+    calculator.add_command( status_command );
+    calculator.add_command( reserve_status );
+
+
+}
+
+//Unit Status Name
+pub fn get_unit_status_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString { "UnitStatus".into() }
+
+pub fn unit_status_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFloats, _method_info: OptionalMethod) -> f32 {
+    if args.items.len() == 0 { return 0.0; }
+    let status = unit.status.value;
+    let flag = args.items[0] as u64;
+    println!("UnitStatus Command: {} & {} is {}", status, flag, status & flag != 0);
+    if status & flag != 0 {
+        1.0
+    }
+    else {
+        0.0
+    }
 }
 
 // Mov is what you use in actvalue/condition for this command when replacing it in the vtable 
@@ -220,11 +253,7 @@ pub struct ListFloats {
 }
 // used to check if unit has skill 
 pub fn check_has_skill(this: &Unit, skill: &SkillData) -> bool {
-    if this.has_skill(skill) || this.has_skill_equip(skill) || this.has_skill_private(skill) {
-        true
-    } else {
-        false
-    }
+    this.has_skill(skill) || this.has_skill_equip(skill) || this.has_skill_private(skill)
 }
 // name of Skill range check that will be used in condition/actvalues
 pub fn get_sid_check_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString {
@@ -273,8 +302,10 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     let range = args.items[0] as i32;
     let skill = &skill_list[skill_index as usize]; 
     
-    // if range is 0, check if unit itself has the skill 
-    if range == 0 {
+    // keeping track of the count of units in each force that has the skill
+    let mut force_unit_count: [i32; 3] = [0; 3];
+
+    if range == 0 { // Self
         if check_has_skill(unit, skill) {
             return 1.0;
         }
@@ -282,27 +313,30 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
             return 0.0;
         }
     }
+    else if range == 99 {    // all units, includes unit
+        for x in 1..250 {
+            if let Some(unit) = UnitPool::get_by_index(x).filter(|unit| unit.force.is_some_and(|f| ( 1 << f.force_type) & 7 != 0)) {
+                if check_has_skill(unit, skill) { force_unit_count[ unit.force.unwrap().force_type as usize] += 1;}
+            }
+        }
+    }
+    else {
+        let x_pos = unit.get_x();
+        let z_pos = unit.get_z();
+        for x in -range..range+1 {
+            let x_check = x + x_pos;    // x position to check for unit
+            for z in -range..range+1 {
+                let r2 = range * range;
+                let dr2 = x*x + z*z;
+                let z_check = z + z_pos;   // z position to check for unit
 
-    let x_pos = unit.get_x();
-    let z_pos = unit.get_z();
+                if dr2 > r2 { continue; }   // if out of range
 
-    // keeping track of the count of units in each force that has the skill
-    let mut force_unit_count: [i32; 3] = [0; 3];
-
-    // 
-    for x in -range..range+1 {
-        let x_check = x + x_pos;    // x position to check for unit
-        for z in -range..range+1 {
-            let r2 = range * range;
-            let dr2 = x*x + z*z;
-            let z_check = z + z_pos;   // z position to check for unit
-
-            if dr2 > r2 { continue; }   // if out of range
-
-            for f in 0..3 {
-                if check_unit_pos_skill(x_check, z_check, f as i32, skill) {
-                    // add to the force's unit counter 
-                    force_unit_count[ f as usize] += 1;
+                for f in 0..3 {
+                    if check_unit_pos_skill(x_check, z_check, f as i32, skill) {
+                        // add to the force's unit counter 
+                        force_unit_count[ f as usize] += 1;
+                    }
                 }
             }
         }
