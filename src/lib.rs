@@ -104,7 +104,7 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
 }
 
 
-#[unity::hook("App", "GameCalculator", ".ctor")]
+#[unity::hook("App", "SystemCalculator", ".ctor")]
 pub fn gamecalculator_ctor(this: &mut CalculatorManager, method_info: OptionalMethod) {
     // GameCalculator is a CalculatorManager
     call_original!(this, method_info);
