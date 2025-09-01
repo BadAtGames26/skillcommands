@@ -19,7 +19,7 @@ pub fn register_get_gold(calculator: &mut CalculatorManager) {
     let gold = il2cpp::instantiate_class::<CalculatorCommand>(difficulty.get_class().clone()).unwrap();
     println!("Made gold command");
     gold.get_class_mut().get_virtual_method_mut("get_Name").map(|method| method.method_ptr = get_gold_name as _);
-    gold.get_class_mut().get_virtual_method_mut("Fer").map(|method| method.method_ptr = get_gold as _);
+    gold.get_class_mut().get_virtual_method_mut("Get").map(|method| method.method_ptr = get_gold as _);
     println!("Set get and name function");
     gold.get_class_mut().get_vtable_mut()[9].method_ptr = get_gold as *mut u8; 
      println!("Trying to add gold command");
