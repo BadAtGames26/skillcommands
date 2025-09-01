@@ -6,6 +6,8 @@ use unity::{prelude::*, il2cpp::object::Array};
 use engage::gamedata::{Gamedata, unit::*, skill::SkillData};
 use engage::{mess::*, force::*};
 
+mod gold;
+
 #[unity::hook("App", "UnitCalculator", "AddCommand")]
 fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMethod){
     // GameCalculator is a CalculatorManager
@@ -99,7 +101,16 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
 
     calculator.add_command( status_command );
     calculator.add_command( reserve_status );
+}
 
+
+#[unity::hook("App", "GameCalculator", ".ctor")]
+pub fn gamecalculator_ctor(this: &mut CalculatorManager, method_info: OptionalMethod) {
+    // GameCalculator is a CalculatorManager
+    call_original!(this, method_info);
+
+    // Get Gold
+    gold::register_get_gold(this);
 
 }
 
@@ -110,7 +121,7 @@ pub fn unit_status_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListF
     if args.items.len() == 0 { return 0.0; }
     let status = unit.status.value;
     let flag = args.items[0] as u64;
-    println!("UnitStatus Command: {} & {} is {}", status, flag, status & flag != 0);
+    //println!("UnitStatus Command: {} & {} is {}", status, flag, status & flag != 0);
     if status & flag != 0 {
         1.0
     }
@@ -285,7 +296,7 @@ pub fn sid_range_check(_this: &GameCalculatorCommand, unit: &Unit, args: ListFlo
     // returns number of units that has skill index at a given range and of a given force
     // SidRange( 1, スキル("SID_平和の花効果"), 1) will check for enemy (force 1) units at 1 range with skill SID_平和の花効果 
 
-    println!("SID Range Check with {} args", args.size);
+    //println!("SID Range Check with {} args", args.size);
     // if only 1 argument is given, return false
     if args.size < 2 {
         return 0.0;
@@ -406,5 +417,5 @@ pub fn main() {
         );
     }));
 
-    skyline::install_hooks!(add_command_hook);
+    skyline::install_hooks!(add_command_hook, gamecalculator_ctor);
 }

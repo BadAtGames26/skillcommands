@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 engage = { git = "https://github.com/DivineDragonFanClub/engage.git", version = "0.10.0" }
-skyline = { git = "https://github.com/Raytwo/skyline-rs", branch = "preview" }
+skyline = { version = "0.5.1" }
 unity = { git = "https://github.com/DivineDragonFanClub/unity.git", version = "0.3.0" }
 
 [profile.dev]
