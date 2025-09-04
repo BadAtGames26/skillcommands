@@ -20,15 +20,15 @@ pub fn register_gold(calculator: &mut CalculatorManager) {
 pub fn get_gold_name(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> &'static Il2CppString { "Gold".into() }
 
 pub fn get_gold(_this: &GameCalculatorCommand, _method_info: OptionalMethod) -> f32 {
-    println!("Get_Gold FN");
+    //println!("Get_Gold FN");
     let userdata = GameUserData::get_instance();
     let gold = unsafe { userdata_get_gold(userdata, None) };
-    println!("Gold: {}G", gold);
+    //println!("Gold: {}G", gold);
     gold as f32
 }
 
 pub fn set_gold(_this: &GameCalculatorCommand, value: f32, _method_info: OptionalMethod) {
-    println!("Set_Gold FN");
+    // println!("Set_Gold FN");
     let userdata = GameUserData::get_instance();
     let gold = unsafe { userdata_get_gold(userdata, None) as f32 };
     let new_gold = ( gold + value ) as i32;
@@ -38,7 +38,7 @@ pub fn set_gold(_this: &GameCalculatorCommand, value: f32, _method_info: Optiona
     unsafe { 
         userdata_set_gold(userdata, new_gold, None) 
     };
-    println!("Gold: {}G", new_gold);
+    //println!("Gold: {}G", new_gold);
 }
 
 #[unity::from_offset("App", "GameUserData", "get_Gold")]

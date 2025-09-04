@@ -34,8 +34,11 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
 
     // Example 4: SID Skill Range Skill: most involved custom skill command that will return the number of units (from a particular force) within a range that has a skil;
     sidrange::register_sid_range(calculator);
+
+    // Example 5: UnitStatus: Checks the status on a unit
+    unitstatus::register_unit_status(calculator);
     
-    // Example 5: Grabs the current gold a player has and can set it to another value.
+    // Example 6: Grabs the current gold a player has and can set it to another value.
     gold::register_gold(calculator);
 }
 
