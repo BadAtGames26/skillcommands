@@ -12,5 +12,9 @@ SidRange - Checks if a unit has skill in a range. Usage is SidRange( Range, ス�
 
 UnitStatus - Checks if unit has a certain status. Usage is UnitStatus( Status ).
 
+Gold - The current gold an army has, can increase or decrease.
+
+Nation - Returns unit's nation/hometown. Returns -1 if no unit.
+
 ## Adjusted Skill Commands
 兵種ランク - Special Classes now return 2 instead of being treated as a base class.
