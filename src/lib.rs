@@ -5,6 +5,7 @@ use unity::{prelude::*, il2cpp::object::Array};
 
 mod gold;
 mod mov;
+mod nation;
 mod rank;
 mod sidrange;
 mod triangle;
@@ -40,6 +41,9 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
     
     // Example 6: Grabs the current gold a player has and can set it to another value.
     gold::register_gold(calculator);
+
+    // Example 7: Returns unit's nation/hometown. Returns -1 if no unit.
+    nation::register_nation(calculator);
 }
 
 #[skyline::main(name = "skillcmd")]
