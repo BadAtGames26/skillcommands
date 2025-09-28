@@ -10,6 +10,8 @@ mod rank;
 mod sidrange;
 mod triangle;
 mod unitstatus;
+mod terrain;
+mod util;
 
 
 #[unity::class("App", "List")]
@@ -44,6 +46,9 @@ fn add_command_hook(calculator: &mut CalculatorManager, method_info: OptionalMet
 
     // Example 7: Returns unit's nation/hometown. Returns -1 if no unit.
     nation::register_nation(calculator);
+
+    // Example 8: Get terrain avoid/defense/heal/move...
+    terrain::register_terrain(calculator);
 }
 
 #[skyline::main(name = "skillcmd")]
