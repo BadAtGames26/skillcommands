@@ -7,7 +7,7 @@ use engage::{
         image::{MapImage, MapImageTerrain},
         overlap::MapOverlap,
     },
-    util::get_instance,
+    util::{get_instance, try_get_instance},
 };
 use unity::{prelude::OptionalMethod, system::Il2CppString};
 
@@ -17,6 +17,7 @@ mod command {
     pub const TERRAIN_HEAL: &str = "TerrainHeal";
     pub const TERRAIN_MOV: &str = "TerrainMov";
     pub const TERRAIN_IMMUNE_BREAK: &str = "TerrainImmuneBreak";
+    pub const TERRAIN_REMOVE: &str = "配置除去可能";
 }
 
 pub fn register_terrain(manager: &mut CalculatorManager) {
@@ -25,6 +26,9 @@ pub fn register_terrain(manager: &mut CalculatorManager) {
     }
     if let Some(terrain_def) = manager.find_checked(command::TERRAIN_DEF) {
         terrain_def.assign_virtual_method("GetImpl", get_terrain_def_command_unit as _);
+    }
+    if let Some(terrain_rem) = manager.find_checked(command::TERRAIN_REMOVE) {
+        terrain_rem.assign_virtual_method("GetImpl", get_terrain_rem_command_unit as _);
     }
     if let Some(terrain_heal) = manager.clone_from_name(command::TERRAIN_AVO) {
         terrain_heal.assign_virtual_method("get_Name", get_terrain_heal_command_name as _);
@@ -126,6 +130,19 @@ fn get_terrain_immune_break_command_unit(
     }
 }
 
+fn get_terrain_rem_command_unit(
+    _this: &GameCalculatorCommand,
+    unit: &Unit,
+    _method: OptionalMethod,
+) -> f32 {
+    let removal = unit.is_terrain_removal();
+    if removal {
+        1f32
+    } else {
+        0f32
+    }
+}
+
 fn get_terrain_heal_command_battle_info(
     _this: &GameCalculatorCommand,
     side: &BattleInfoSide,
@@ -193,6 +210,7 @@ trait UnitTerrainTrait {
     fn get_terrain_heal(&self) -> i32;
     fn get_terrain_mov(&self) -> i32;
     fn is_terrain_immune_to_break(&self) -> bool;
+    fn is_terrain_removal(&self) -> bool;
 }
 
 impl UnitTerrainTrait for Unit {
@@ -238,18 +256,34 @@ impl UnitTerrainTrait for Unit {
     fn is_terrain_immune_to_break(&self) -> bool {
         get_terrain_and_overlap_data(self, |t| t.is_immune_break() as i8) > 0
     }
+
+    fn is_terrain_removal(&self) -> bool {
+        get_removal_data(self, |t| 0) > 0
+    }
 }
 
 fn get_terrain_and_overlap_data<F>(unit: &Unit, getter: F) -> i8
 where
     F: Fn(&TerrainData) -> i8,
 {
-    let x = unit.get_x();
-    let z = unit.get_z();
-    let terrain = get_instance::<MapImage>().terrain.get_terrain(x, z);
-    let overlap = MapOverlap::get_terrain(x, z);
-    get_single_terrain_data(unit, terrain, &getter)
-        + get_single_terrain_data(unit, overlap, &getter)
+    let mapimage: Option<&mut MapImage> = try_get_instance::<MapImage>(); // MapImage may be null, fixes crash while in Arena / Off map
+    if mapimage.is_some() {
+        println!("MapImage is some");
+        let x = unit.get_x();
+        let z = unit.get_z();
+        println!("Unit: {}, X: {}, Z: {}", unit.person.name.unwrap_or("None".into()), x, z);
+        if x > -1 && z > -1 {
+            println!("Passed -1, -1 check");
+            let terrain = mapimage.unwrap().terrain.get_terrain(x, z);
+            let overlap = MapOverlap::get_terrain(x, z);
+            get_single_terrain_data(unit, terrain, &getter)
+                + get_single_terrain_data(unit, overlap, &getter)
+        } else {
+            0
+        }
+    } else {
+        0
+    }
 }
 
 fn get_single_terrain_data<F>(unit: &Unit, t: Option<&TerrainData>, getter: F) -> i8
@@ -265,6 +299,25 @@ where
     })
 }
 
+fn get_removal_data<F>(unit: &Unit, getter: F) -> i8 
+    where
+        F: Fn(&TerrainData) -> i8,
+    {
+    let mapimage: Option<&mut MapImage> = try_get_instance::<MapImage>(); // MapImage may be null, fixes crash while in Arena / Off map
+    if mapimage.is_some() {
+        let x = unit.get_x();
+        let z = unit.get_z();
+        if x > -1 && z > -1 {
+            let removal = unsafe { mapoverlap_canremove(unit, x, z, None) };
+            removal as i8
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
 #[skyline::from_offset(0x02064ED0)]
 fn map_image_terrain_get_data(
     this: &MapImageTerrain,
@@ -278,3 +331,6 @@ fn terrain_data_is_immune_break(this: &TerrainData, method: OptionalMethod) -> b
 
 #[skyline::from_offset(0x01A34C90)]
 fn unit_is_terrain_invalid(this: &Unit, terrain: &TerrainData, method: OptionalMethod) -> bool;
+
+#[skyline::from_offset(0x01DFE730)]
+fn mapoverlap_canremove(attacker: &Unit, x: i32, y: i32, method: OptionalMethod) -> bool;

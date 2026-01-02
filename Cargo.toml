@@ -11,7 +11,7 @@ titleid = "0100a6301214e000" # Fire Emblem Engage
 crate-type = ["cdylib"]
 
 [dependencies]
-engage = { git = "https://github.com/DivineDragonFanClub/engage.git", version = "0.10.0" }
+engage = { git = "https://github.com/DivineDragonFanClub/engage.git", version = "0.11.0" }
 skyline = { git = "https://github.com/Raytwo/skyline-rs", branch = "preview" }
 unity = { git = "https://github.com/DivineDragonFanClub/unity.git", version = "0.3.0" }
 
